@@ -184,7 +184,11 @@ static const HLStyle highlighting_styles_BASIC[] =
 	{ SCE_B_LABEL,			"label",			FALSE },
 	{ SCE_B_ERROR,			"error",			FALSE },
 	{ SCE_B_HEXNUMBER,		"hexnumber",		FALSE },
-	{ SCE_B_BINNUMBER,		"binnumber",		FALSE }
+	{ SCE_B_BINNUMBER,		"binnumber",		FALSE },
+	{ SCE_B_COMMENTBLOCK,		"commentblock",		FALSE },
+	{ SCE_B_DOCLINE,		"docline",		FALSE },
+	{ SCE_B_DOCBLOCK,		"docblock",		FALSE },
+	{ SCE_B_DOCKEYWORD,		"dockeyword",		FALSE }
 };
 static const HLKeyword highlighting_keywords_BASIC[] =
 {

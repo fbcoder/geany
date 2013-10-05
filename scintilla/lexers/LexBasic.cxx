@@ -24,6 +24,10 @@
 #include <assert.h>
 #include <ctype.h>
 
+#ifdef _MSC_VER
+#pragma warning(disable: 4786)
+#endif
+
 #include <string>
 #include <map>
 
@@ -55,11 +59,11 @@ static int character_classification[128] =
     0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  1,  0,  0,  1,  0,  0,
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
     1,  2,  0,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  10, 2,
-    60, 60, 28, 28, 28, 28, 28, 28, 28, 28, 2,  2,  2,  2,  2,  2,
-    2,  20, 20, 20, 20, 20, 20, 4,  4,  4,  4,  4,  4,  4,  4,  4,
-    4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  2,  2,  2,  2,  4,
-    2,  20, 20, 20, 20, 20, 20, 4,  4,  4,  4,  4,  4,  4,  4,  4,
-    4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  2,  2,  2,  2,  0
+   60, 60, 28, 28, 28, 28, 28, 28, 28, 28,  2,  2,  2,  2,  2,  2,
+    2, 84, 84, 84, 84, 84, 84, 68, 68, 68, 68, 68, 68, 68, 68, 68,
+   68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68,  2,  2,  2,  2, 68,
+    2, 84, 84, 84, 84, 84, 84, 68, 68, 68, 68, 68, 68, 68, 68, 68,
+   68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68,  2,  2,  2,  2,  0
 };
 
 static bool IsSpace(int c) {
@@ -84,6 +88,10 @@ static bool IsHexDigit(int c) {
 
 static bool IsBinDigit(int c) {
 	return c < 128 && (character_classification[c] & 32);
+}
+
+static bool IsLetter(int c) {
+	return c < 128 && (character_classification[c] & 64);
 }
 
 static int LowerCase(int c)
@@ -126,13 +134,23 @@ static int CheckPureFoldPoint(char const *token, int &level) {
 static int CheckFreeFoldPoint(char const *token, int &level) {
 	if (!strcmp(token, "function") ||
 		!strcmp(token, "sub") ||
-		!strcmp(token, "type")) {
+		!strcmp(token, "enum") ||
+		!strcmp(token, "type") ||
+		!strcmp(token, "union") ||
+		!strcmp(token, "property") ||
+		!strcmp(token, "destructor") ||
+		!strcmp(token, "constructor")) {
 		level |= SC_FOLDLEVELHEADERFLAG;
 		return 1;
 	}
 	if (!strcmp(token, "end function") ||
 		!strcmp(token, "end sub") ||
-		!strcmp(token, "end type")) {
+		!strcmp(token, "end enum") ||
+		!strcmp(token, "end type") ||
+		!strcmp(token, "end union") ||
+		!strcmp(token, "end property") ||
+		!strcmp(token, "end destructor") ||
+		!strcmp(token, "end constructor")) {
 		return -1;
 	}
 	return 0;
@@ -223,7 +241,7 @@ public:
 	           CheckFoldPoint(CheckFoldPoint_),
 	           osBasic(wordListDescriptions) {
 	}
-	virtual ~LexerBasic() {
+	~LexerBasic() {
 	}
 	void SCI_METHOD Release() {
 		delete this;
@@ -302,6 +320,7 @@ void SCI_METHOD LexerBasic::Lex(unsigned int startPos, int length, int initStyle
 
 	bool wasfirst = true, isfirst = true; // true if first token in a line
 	styler.StartAt(startPos);
+	int styleBeforeKeyword = SCE_B_DEFAULT;
 
 	StyleContext sc(startPos, length, initStyle, styler);
 
@@ -363,19 +382,35 @@ void SCI_METHOD LexerBasic::Lex(unsigned int startPos, int length, int initStyle
 				sc.ChangeState(SCE_B_ERROR);
 				sc.SetState(SCE_B_DEFAULT);
 			}
-		} else if (sc.state == SCE_B_COMMENT || sc.state == SCE_B_PREPROCESSOR) {
+// TJF start
+		} else if (sc.state == SCE_B_PREPROCESSOR ||
+                sc.state == SCE_B_COMMENT ||
+                sc.state == SCE_B_DOCLINE) {
 			if (sc.atLineEnd) {
 				sc.SetState(SCE_B_DEFAULT);
 			}
-		}
+		} else if (sc.state == SCE_B_DOCKEYWORD) {
+			if (IsSpace(sc.ch)) {
+				sc.SetState(styleBeforeKeyword);
+			}
+		} else if (sc.state == SCE_B_COMMENTBLOCK || sc.state == SCE_B_DOCBLOCK) {
+			if (sc.Match("\'/")) {
+				sc.Forward();
+				sc.ForwardSetState(SCE_B_DEFAULT);
+			} else if (sc.ch == '\\' || sc.ch == '@') {
+			  if (IsLetter(sc.chNext) && sc.chPrev != '\\') {
+				  styleBeforeKeyword = sc.state;
+				  sc.SetState(SCE_B_DOCKEYWORD);
+        };
+			}
+// TJF end
+    }
 
 		if (sc.atLineStart)
 			isfirst = true;
 
 		if (sc.state == SCE_B_DEFAULT || sc.state == SCE_B_ERROR) {
-			if (isfirst && sc.Match('.')) {
-				sc.SetState(SCE_B_LABEL);
-			} else if (isfirst && sc.Match('#')) {
+			if (isfirst && sc.Match('#')) {
 				wasfirst = isfirst;
 				sc.SetState(SCE_B_IDENTIFIER);
 			} else if (sc.Match(comment_char)) {
@@ -383,8 +418,20 @@ void SCI_METHOD LexerBasic::Lex(unsigned int startPos, int length, int initStyle
 				// up in freebasic with SCE_B_PREPROCESSOR.
 				if (comment_char == '\'' && sc.Match(comment_char, '$'))
 					sc.SetState(SCE_B_PREPROCESSOR);
-				else
+// TJF start
+				else if (sc.Match("\'*") || sc.Match("\'!")) {
+          sc.SetState(SCE_B_DOCLINE);
+				} else {
 					sc.SetState(SCE_B_COMMENT);
+				}
+			} else if (sc.Match("/\'")) {
+				if (sc.Match("/\'*") || sc.Match("/\'!")) {	// Support of gtk-doc/Doxygen doc. style
+					sc.SetState(SCE_B_DOCBLOCK);
+				} else {
+					sc.SetState(SCE_B_COMMENTBLOCK);
+				}
+				sc.Forward();	// Eat the ' so it isn't used for the end of the comment
+// TJF end
 			} else if (sc.Match('"')) {
 				sc.SetState(SCE_B_STRING);
 			} else if (IsDigit(sc.ch)) {
